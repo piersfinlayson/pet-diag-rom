@@ -4,7 +4,8 @@
 .include "version.inc"
 
 .import memory_address_list
-.import AuthorString, DashString, ProgString, FinishedString
+.import AuthorString, DashString, ProgString, ZeroPageString, TestString
+.import PassedString, FinishedString
 
 .segment "HEADER"
 .byte $F0
@@ -14,9 +15,108 @@
 .segment "CODE"
 
 start:
-    ; Initialize the CPU and stack
+    ; Initialize the CPU
     sei
     cld
+
+; Zero page test routine
+; Output: Carry clear = pass, Carry set = fail
+; Uses only A, X, Y registers - no RAM/ZP/stack storage
+test_zero_page:
+    ; Test 1: Walking 1s pattern
+    ldy #1              ; Start with bit 0 set
+@walk1_outer:
+    ; Write pattern Y to all of zero page
+    ldx #0
+@walk1_write:
+    sty $00, x
+    inx
+    bne @walk1_write
+    
+    ; Verify pattern
+    ldx #0
+@walk1_read:
+    tya                 ; Get test pattern into A
+    cmp $00, x          ; Compare A with memory
+    bne @fail
+    inx
+    bne @walk1_read
+    
+    ; Next bit position
+    tya
+    asl                 ; Shift left
+    tay
+    bcc @walk1_outer    ; Continue until bit 7 shifts out
+    
+    ; Test 2: Walking 0s pattern
+    ldy #$FE            ; Start with bit 0 clear
+@walk0_outer:
+    ; Write pattern Y to all of zero page
+    ldx #0
+@walk0_write:
+    sty $00, x
+    inx
+    bne @walk0_write
+    
+    ; Verify pattern  
+    ldx #0
+@walk0_read:
+    tya                 ; Get test pattern into A
+    cmp $00, x          ; Compare A with memory
+    bne @fail
+    inx
+    bne @walk0_read
+    
+    ; Next bit position (rotate 0 left)
+    tya
+    rol
+    tay
+    cmp #$7F            ; Stop when we've done all 8 positions
+    bne @walk0_outer
+    
+    ; Test 3: Address-in-address pattern
+    ldx #0
+@addr_write:
+    txa                 ; Transfer X to A
+    sta $00, x          ; Store A at address X
+    inx
+    bne @addr_write
+    
+    ldx #0
+@addr_read:
+    txa                 ; Get X into A
+    cmp $00, x          ; Compare A with memory at X
+    bne @fail
+    inx
+    bne @addr_read
+    
+    ; All tests passed
+    clc
+    jmp stack_test
+    
+@fail:
+    sec
+    lda #'Z'
+    sta $8000
+    lda #'P'
+    sta $8001
+    lda #' '
+    sta $8002
+    sta $8006
+    lda #'E'
+    sta $8003
+    lda #'R'
+    sta $8004
+    sta $8005
+    jmp final_loop
+
+    ; Test the stack
+stack_test:
+    lda #$01            ; Test page $0100
+    jmp test_ram_page   ; JMP - not JSR
+
+    ; Initialize the stack
+after_stack_test:
     ldx #$ff
     txs
 
@@ -26,6 +126,14 @@ start:
     WriteString ProgString
     WriteString DashString
     WriteString AuthorString
+    jsr newline
+
+    jsr newline
+    WriteString ZeroPageString
+    WriteChar ' '
+    WriteString TestString
+    WriteChar ' '
+    WriteString PassedString
     jsr newline
 
     jsr dump_address_list
@@ -325,6 +433,119 @@ dump_address_list:
     bne @loop
 
     rts
+
+; RAM page test routine
+; Input: A = page number to test (high byte of address)
+; Output: Carry clear = pass, Carry set = fail
+; Uses: A, X, Y, ZP_PTR, ZP_TEMP_RAM_TEST
+test_ram_page:
+    ; Set up page address
+    sta ZP_PTR + 1
+    lda #0
+    sta ZP_PTR
+    
+    ; Test 1: Walking 1s pattern
+    ldx #8              ; 8 bit positions
+    lda #1
+@walk1_loop:
+    sta ZP_TEMP_RAM_TEST         ; Current test pattern
+    ldy #0
+@write1_loop:
+    lda ZP_TEMP_RAM_TEST
+    sta (ZP_PTR), y
+    iny
+    bne @write1_loop
+    
+    ; Verify pattern
+    ldy #0
+@read1_loop:
+    lda (ZP_PTR), y
+    cmp ZP_TEMP_RAM_TEST
+    bne @fail
+    iny
+    bne @read1_loop
+    
+    ; Next bit position
+    asl ZP_TEMP_RAM_TEST
+    dex
+    bne @walk1_loop
+    
+    ; Test 2: Walking 0s pattern  
+    ldx #8
+    lda #$FE
+@walk0_loop:
+    sta ZP_TEMP_RAM_TEST
+    ldy #0
+@write0_loop:
+    lda ZP_TEMP_RAM_TEST
+    sta (ZP_PTR), y
+    iny
+    bne @write0_loop
+    
+    ldy #0
+@read0_loop:
+    lda (ZP_PTR), y
+    cmp ZP_TEMP_RAM_TEST
+    bne @fail
+    iny
+    bne @read0_loop
+    
+    rol ZP_TEMP_RAM_TEST         ; Rotate 0 bit left
+    dex
+    bne @walk0_loop
+    
+    ; Test 3: Address-in-address pattern
+    ldy #0
+@write_addr_loop:
+    tya
+    sta (ZP_PTR), y
+    iny
+    bne @write_addr_loop
+    
+    ldy #0
+@read_addr_loop:
+    lda (ZP_PTR), y
+    cmp (ZP_PTR), y     ; Compare with itself
+    bne @fail
+    tya
+    cmp (ZP_PTR), y     ; Compare with expected value
+    bne @fail
+    iny
+    bne @read_addr_loop
+    
+    ; All tests passed
+    lda ZP_PTR + 1      ; Check which page we tested
+    cmp #$01            ; Stack page?
+    beq @stack_done     ; If stack, don't RTS
+
+    clc
+    rts
+    
+@fail:
+    lda ZP_PTR + 1
+    cmp #$01
+    beq @stack_fail
+
+    sec
+    rts
+
+@stack_done:
+    jmp after_stack_test
+
+@stack_fail:
+    lda #'S'
+    sta $8000
+    lda #'P'
+    sta $8001
+    lda #' '
+    sta $8002
+    sta $8006
+    lda #'E'
+    sta $8003
+    lda #'R'
+    sta $8004
+    sta $8005
+    jmp final_loop
 
 nmi_handler:
     ; Handle NMI (not implemented)

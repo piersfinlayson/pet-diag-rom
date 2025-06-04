@@ -40,3 +40,9 @@ ZP_TEMP_DUMP_LIST = $0C
 
 ; Temporary storage for dump routine
 ZP_TEMP_DUMP_MEM = $0D
+
+; Generic purpose pointer
+ZP_PTR = $0E
+
+; Temporary storage for RAM test
+ZP_TEMP_RAM_TEST = $10
