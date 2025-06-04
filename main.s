@@ -4,8 +4,7 @@
 .include "version.inc"
 
 .import memory_address_list
-.import AuthorString
-.import ProgString
+.import AuthorString, DashString, ProgString, FinishedString
 
 .segment "HEADER"
 .byte $F0
@@ -21,31 +20,20 @@ start:
     ldx #$ff
     txs
 
-    ; Clear the screen
-    JSR init_screen
+    ; Clear the screen and write pointers
+    jsr init_screen
 
-    ; Initialize the screen write pointers
-    ldx #$0
-    stx ZP_LINE
-    stx ZP_COL
-
-    ; Write the author string
-    lda #<AuthorString
-    sta ZP_STR_PTR
-    lda #>AuthorString
-    sta ZP_STR_PTR + 1
-    jsr write_string
-
-    ; Write the program name
+    WriteString ProgString
+    WriteString DashString
+    WriteString AuthorString
     jsr newline
-    lda #<ProgString
-    sta ZP_STR_PTR
-    lda #>ProgString
-    sta ZP_STR_PTR + 1
-    jsr write_string
 
-    ; Dump the first few bytes of the $E000 memory area
     jsr dump_address_list
+    jsr newline
+
+    ; Write the finished string
+    jsr newline
+    WriteString FinishedString
 
 final_loop:
     ; Infinite loop to keep the program running
@@ -61,15 +49,16 @@ init_screen:
     lda #>SCREEN_RAM
     sta ZP_PTR + 1
 
-    ; Set A to the space character
-    lda #$20
-
     ; Set X to the number of lines minus one
     ldx #(SCREEN_ROWS - 1)
 
     ; Loop through each line
 @init_line:
-    ldy #(SCREEN_COLS-1)    ; Column
+    ; Set A to the space character
+    lda #$20
+
+    ; Set column pointer to the end of the line (we'll work backwards)
+    ldy #(SCREEN_COLS-1)
 @init_char:
     sta (ZP_PTR), Y         ; Store space at the current position
     dey
@@ -87,6 +76,11 @@ init_screen:
     dex
     bpl @init_line          ; Loop until line is less than 0
 
+    ; Initialize the screen write pointers
+    ldx #$0
+    stx ZP_LINE
+    stx ZP_COL
+
     rts
 
 ; Calculate screen address from ZP_LINE/ZP_COL into ZP_PTR
@@ -95,24 +89,46 @@ calc_screen_addr:
     lda ZP_LINE
     beq @line_done          ; If line 0, skip multiply
     
-    ; Multiply line by 40
+    ; Multiply line by 40 (16-bit result)
     ldx ZP_LINE
     lda #0
+    sta ZP_PTR              ; Clear low byte
+    sta ZP_PTR + 1          ; Clear high byte
 @mult_loop:
     clc
+    lda ZP_PTR
     adc #SCREEN_COLS
+    sta ZP_PTR
+    lda ZP_PTR + 1
+    adc #0                  ; Add carry to high byte
+    sta ZP_PTR + 1
     dex
     bne @mult_loop
-    
+    jmp @add_col
+
 @line_done:
-    ; Add column offset and screen base
+    ; Line 0 - result is 0
+    lda #0
+    sta ZP_PTR
+    sta ZP_PTR + 1
+
+@add_col:
+    ; Add column offset
     clc
+    lda ZP_PTR
     adc ZP_COL
+    sta ZP_PTR
+    lda ZP_PTR + 1
+    adc #0
+    sta ZP_PTR + 1
+    
+    ; Add screen base address
     clc
+    lda ZP_PTR
     adc #<SCREEN_RAM
     sta ZP_PTR
-    lda #>SCREEN_RAM
-    adc #0
+    lda ZP_PTR + 1
+    adc #>SCREEN_RAM
     sta ZP_PTR + 1
     rts
 
@@ -128,6 +144,12 @@ advance_position:
     lda #0
     sta ZP_COL
     inc ZP_LINE
+
+    cmp #SCREEN_ROWS
+    bcc @done               ; Still on screen
+
+    ; Wrap to top of screen
+    sta ZP_LINE             ; A is still 0
 @done:
     rts
 
@@ -213,24 +235,26 @@ write_hex_addr:
 ; Outputs: $ADDR bytes...
 dump_memory:
     ; Output '$'
-    lda #'$'
-    jsr write_char
+    WriteChar '$'
     
     ; Output address
     jsr write_hex_addr
     
-    ; Output space
-    lda #' '
-    jsr write_char
-    
     ; Output data bytes
     ldy #0
+    sty ZP_TEMP_DUMP_MEM
 @dump_loop:
+    WriteChar ' '
+
+    ; Output byte
+    ldy ZP_TEMP_DUMP_MEM
     lda (ZP_DUMP_ADDR), y
     jsr write_hex_byte
     
-    iny
-    cpy ZP_DUMP_COUNT
+    ; Move to next byte
+    inc ZP_TEMP_DUMP_MEM
+    lda ZP_TEMP_DUMP_MEM
+    cmp ZP_DUMP_COUNT
     bcc @dump_loop
     
     rts
@@ -263,7 +287,7 @@ dump_address_list:
     ; Get address count
     ldy #0
     lda (ZP_LIST_PTR), y
-    tax                     ; X = address count
+    sta ZP_TEMP_DUMP_LIST
     
     ; Advance pointer past count byte
     inc ZP_LIST_PTR
@@ -272,7 +296,7 @@ dump_address_list:
     
 @setup_count:
     ; Set up dump count
-    lda #4
+    lda #DUMP_BYTES
     sta ZP_DUMP_COUNT
 
 @loop:
@@ -296,7 +320,7 @@ dump_address_list:
     inc ZP_LIST_PTR + 1
     
 @next:
-    dex
+    dec ZP_TEMP_DUMP_LIST
     bne @loop
 
     rts

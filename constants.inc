@@ -9,7 +9,10 @@ SCREEN_RAM = $8000
 
 ; Screen dimensions
 SCREEN_COLS = 40
-SCREEN_ROWS = 25
+SCREEN_ROWS = 24
+
+; Number of bytes to dump from each address
+DUMP_BYTES = 8
 
 ; General purpose byte pointer
 ZP_PTR = $00
@@ -31,3 +34,9 @@ ZP_DUMP_COUNT = $08
 
 ; Two byte pointer to current address in list
 ZP_LIST_PTR = $0A
+
+; Temporary storage for dump routine
+ZP_TEMP_DUMP_LIST = $0C
+
+; Temporary storage for dump routine
+ZP_TEMP_DUMP_MEM = $0D
