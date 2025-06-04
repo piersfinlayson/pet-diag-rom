@@ -14,8 +14,8 @@ SCREEN_ROWS = 24
 ; Number of bytes to dump from each address
 DUMP_BYTES = 8
 
-; General purpose byte pointer
-ZP_PTR = $00
+; Pointer to current screen position
+ZP_SCREEN_PTR = $00
 
 ; Column to write string to
 ZP_COL = $02

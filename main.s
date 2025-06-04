@@ -45,9 +45,9 @@ final_loop:
 init_screen:
     ; Set pointer to the start of screen RAM
     lda #<SCREEN_RAM
-    sta ZP_PTR
+    sta ZP_SCREEN_PTR
     lda #>SCREEN_RAM
-    sta ZP_PTR + 1
+    sta ZP_SCREEN_PTR + 1
 
     ; Set X to the number of lines minus one
     ldx #(SCREEN_ROWS - 1)
@@ -60,18 +60,18 @@ init_screen:
     ; Set column pointer to the end of the line (we'll work backwards)
     ldy #(SCREEN_COLS-1)
 @init_char:
-    sta (ZP_PTR), Y         ; Store space at the current position
+    sta (ZP_SCREEN_PTR), Y         ; Store space at the current position
     dey
     bpl @init_char          ; Loop until column is less than 0
 
     ; Add SCREEN_COLS to the pointer to move to the next line
     clc
-    lda ZP_PTR
+    lda ZP_SCREEN_PTR
     adc #SCREEN_COLS
-    sta ZP_PTR
-    lda ZP_PTR + 1
+    sta ZP_SCREEN_PTR
+    lda ZP_SCREEN_PTR + 1
     adc #0
-    sta ZP_PTR + 1
+    sta ZP_SCREEN_PTR + 1
 
     dex
     bpl @init_line          ; Loop until line is less than 0
@@ -80,10 +80,11 @@ init_screen:
     ldx #$0
     stx ZP_LINE
     stx ZP_COL
+    jsr calc_screen_addr
 
     rts
 
-; Calculate screen address from ZP_LINE/ZP_COL into ZP_PTR
+; Calculate screen address from ZP_LINE/ZP_COL into ZP_SCREEN_PTR
 ; Uses A, X
 calc_screen_addr:
     lda ZP_LINE
@@ -92,16 +93,16 @@ calc_screen_addr:
     ; Multiply line by 40 (16-bit result)
     ldx ZP_LINE
     lda #0
-    sta ZP_PTR              ; Clear low byte
-    sta ZP_PTR + 1          ; Clear high byte
+    sta ZP_SCREEN_PTR              ; Clear low byte
+    sta ZP_SCREEN_PTR + 1          ; Clear high byte
 @mult_loop:
     clc
-    lda ZP_PTR
+    lda ZP_SCREEN_PTR
     adc #SCREEN_COLS
-    sta ZP_PTR
-    lda ZP_PTR + 1
+    sta ZP_SCREEN_PTR
+    lda ZP_SCREEN_PTR + 1
     adc #0                  ; Add carry to high byte
-    sta ZP_PTR + 1
+    sta ZP_SCREEN_PTR + 1
     dex
     bne @mult_loop
     jmp @add_col
@@ -109,27 +110,27 @@ calc_screen_addr:
 @line_done:
     ; Line 0 - result is 0
     lda #0
-    sta ZP_PTR
-    sta ZP_PTR + 1
+    sta ZP_SCREEN_PTR
+    sta ZP_SCREEN_PTR + 1
 
 @add_col:
     ; Add column offset
     clc
-    lda ZP_PTR
+    lda ZP_SCREEN_PTR
     adc ZP_COL
-    sta ZP_PTR
-    lda ZP_PTR + 1
+    sta ZP_SCREEN_PTR
+    lda ZP_SCREEN_PTR + 1
     adc #0
-    sta ZP_PTR + 1
+    sta ZP_SCREEN_PTR + 1
     
     ; Add screen base address
     clc
-    lda ZP_PTR
+    lda ZP_SCREEN_PTR
     adc #<SCREEN_RAM
-    sta ZP_PTR
-    lda ZP_PTR + 1
+    sta ZP_SCREEN_PTR
+    lda ZP_SCREEN_PTR + 1
     adc #>SCREEN_RAM
-    sta ZP_PTR + 1
+    sta ZP_SCREEN_PTR + 1
     rts
 
 ; Advance ZP_COL/ZP_LINE to next position (with wrap)
@@ -159,7 +160,7 @@ write_char:
     jsr calc_screen_addr
     pla                     ; Restore character
     ldy #0
-    sta (ZP_PTR), y
+    sta (ZP_SCREEN_PTR), y
     jmp advance_position    ; Tail call
 
 ; Write string (MSB-terminated)
@@ -171,7 +172,7 @@ write_string:
     tax                     ; Save for MSB check
     and #$7F                ; Clear MSB
     ldy #0
-    sta (ZP_PTR), y         ; Store to screen
+    sta (ZP_SCREEN_PTR), y         ; Store to screen
     
     jsr advance_position
     
