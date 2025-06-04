@@ -8,18 +8,29 @@
 .include "constants.inc"
 
 .export memory_address_list
-.export AuthorString, DashString, ProgString, ZeroPageString, TestString
-.export PassedString, FinishedString
+.export AuthorString, DashString, ProgString, ZeroString, StackString
+.export PageString, RamString, TestString, TestingString, PassedString
+.export FailedString, CompleteString, DetectedString, KbString, RomString
+.export DumpString
 
 .segment "DATA"
 
 CbmString AuthorString, "PIERS.ROCKS"
 CbmString DashString, " - "
 CbmString ProgString, "PET DIAGNOSTICS ROM"
-CbmString ZeroPageString, "ZEROPAGE"
+CbmString ZeroString, "ZERO"
+CbmString StackString, "STACK"
+CbmString PageString, "PAGE"
+CbmString RamString, "RAM"
 CbmString TestString, "TEST"
+CbmString TestingString, "TESTING"
 CbmString PassedString, "PASSED"
-CbmString FinishedString, "FINISHED"
+CbmString FailedString, "FAILED"
+CbmString CompleteString, "COMPLETE"
+CbmString DetectedString, "DETECTED"
+CbmString KbString, "KB"
+CbmString RomString, "ROM"
+CbmString DumpString, "DUMP"
 
 ; Memory address list to dump - first byte is count
 memory_address_list:

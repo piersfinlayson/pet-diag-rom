@@ -46,3 +46,9 @@ ZP_PTR = $0E
 
 ; Temporary storage for RAM test
 ZP_TEMP_RAM_TEST = $10
+
+; Stores the size of the RAM in KB ($08, $10, $20)
+ZP_RAM_SIZE = $11
+
+; If the RAM test fails, this will be set to the address of the failed page
+ZP_FAILED_PAGE = $12

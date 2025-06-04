@@ -4,8 +4,10 @@
 .include "version.inc"
 
 .import memory_address_list
-.import AuthorString, DashString, ProgString, ZeroPageString, TestString
-.import PassedString, FinishedString
+.import AuthorString, DashString, ProgString, ZeroString, StackString
+.import PageString, RamString, TestString, TestingString, PassedString
+.import FailedString, CompleteString, DetectedString, KbString, RomString
+.import DumpString
 
 .segment "HEADER"
 .byte $F0
@@ -19,99 +21,11 @@ start:
     sei
     cld
 
-; Zero page test routine
-; Output: Carry clear = pass, Carry set = fail
-; Uses only A, X, Y registers - no RAM/ZP/stack storage
-test_zero_page:
-    ; Test 1: Walking 1s pattern
-    ldy #1              ; Start with bit 0 set
-@walk1_outer:
-    ; Write pattern Y to all of zero page
-    ldx #0
-@walk1_write:
-    sty $00, x
-    inx
-    bne @walk1_write
-    
-    ; Verify pattern
-    ldx #0
-@walk1_read:
-    tya                 ; Get test pattern into A
-    cmp $00, x          ; Compare A with memory
-    bne @fail
-    inx
-    bne @walk1_read
-    
-    ; Next bit position
-    tya
-    asl                 ; Shift left
-    tay
-    bcc @walk1_outer    ; Continue until bit 7 shifts out
-    
-    ; Test 2: Walking 0s pattern
-    ldy #$FE            ; Start with bit 0 clear
-@walk0_outer:
-    ; Write pattern Y to all of zero page
-    ldx #0
-@walk0_write:
-    sty $00, x
-    inx
-    bne @walk0_write
-    
-    ; Verify pattern  
-    ldx #0
-@walk0_read:
-    tya                 ; Get test pattern into A
-    cmp $00, x          ; Compare A with memory
-    bne @fail
-    inx
-    bne @walk0_read
-    
-    ; Next bit position (rotate 0 left)
-    tya
-    rol
-    tay
-    cmp #$7F            ; Stop when we've done all 8 positions
-    bne @walk0_outer
-    
-    ; Test 3: Address-in-address pattern
-    ldx #0
-@addr_write:
-    txa                 ; Transfer X to A
-    sta $00, x          ; Store A at address X
-    inx
-    bne @addr_write
-    
-    ldx #0
-@addr_read:
-    txa                 ; Get X into A
-    cmp $00, x          ; Compare A with memory at X
-    bne @fail
-    inx
-    bne @addr_read
-    
-    ; All tests passed
-    clc
-    jmp stack_test
-    
-@fail:
-    sec
-    lda #'Z'
-    sta $8000
-    lda #'P'
-    sta $8001
-    lda #' '
-    sta $8002
-    sta $8006
-    lda #'E'
-    sta $8003
-    lda #'R'
-    sta $8004
-    sta $8005
-    jmp final_loop
+    ; Test zero page - jmps to test_stack if successful
+    jmp test_zero_page
 
-    ; Test the stack
-stack_test:
+    ; Test the stack - jmps to after_stack_test if successful
+test_stack:
     lda #$01            ; Test page $0100
     jmp test_ram_page   ; JMP - not JSR
 
@@ -128,27 +42,104 @@ after_stack_test:
     WriteString AuthorString
     jsr newline
 
+    ; Output zero and stack page tests were successful (which they were if
+    ; we get here)
     jsr newline
-    WriteString ZeroPageString
+    WriteString ZeroString
+    WriteChar ' '
+    WriteString PageString
+    WriteChar ' '
+    WriteString TestString
+    WriteChar ' '
+    WriteString PassedString
+    jsr newline
+    WriteString StackString
+    WriteChar ' '
+    WriteString PageString
     WriteChar ' '
     WriteString TestString
     WriteChar ' '
     WriteString PassedString
     jsr newline
 
+    ; Test RAM
+    jsr newline
+    WriteString TestingString
+    WriteChar ' '
+    WriteString RamString
+    WriteChar ' '
+    WriteString PageString
+    WriteChar ' '
+    WriteChar '$'
+    jsr test_all_ram
+    pha                 ; store any failed RAM page
+    php                 ; store result
+
+    ; Output RAM test result - on same line as testing RAM
+    lda #$00
+    sta ZP_COL
+    jsr calc_screen_addr
+    jsr clear_line
+    WriteString DetectedString
+    WriteChar ' '
+    lda ZP_RAM_SIZE
+    jsr write_decimal_byte
+    WriteString KbString
+    WriteChar ' '
+    WriteString RamString
+    jsr newline
+    WriteString RamString
+    WriteChar ' '
+    WriteString TestString
+    WriteChar ' '
+
+    plp
+    bcs @ram_fail
+
+    ; RAM test passed
+    WriteString PassedString
+    pla                 ; Get A back off stack
+    jmp @dump_address_list
+
+@ram_fail:
+    WriteString FailedString
+    WriteString DashString
+    WriteString PageString
+    WriteChar ' '
+    WriteChar '$'
+    pla                 ; Get failed page off stack
+    jsr write_hex_byte
+
+@dump_address_list:
+    jsr newline
     jsr dump_address_list
     jsr newline
 
     ; Write the finished string
     jsr newline
-    WriteString FinishedString
+    WriteString TestString
+    WriteChar 'S'
+    WriteChar ' '
+    WriteString CompleteString
 
 final_loop:
     ; Infinite loop to keep the program running
     jmp final_loop
 
+; Clear a single line
+; Input: ZP_SCREEN_PTR points to start of line to clear
+; Uses: A, Y
+; Preserves: ZP_SCREEN_PTR, X
+clear_line:
+    lda #$20                ; Space character
+    ldy #(SCREEN_COLS-1)    ; Start from last column
+@clear_char:
+    sta (ZP_SCREEN_PTR), Y  ; Store space at current position
+    dey
+    bpl @clear_char         ; Loop until column < 0
+    rts
+
 ; Clear the screen
-;
 ; Uses A, X and Y
 init_screen:
     ; Set pointer to the start of screen RAM
@@ -160,19 +151,10 @@ init_screen:
     ; Set X to the number of lines minus one
     ldx #(SCREEN_ROWS - 1)
 
-    ; Loop through each line
 @init_line:
-    ; Set A to the space character
-    lda #$20
+    jsr clear_line          ; Clear current line
 
-    ; Set column pointer to the end of the line (we'll work backwards)
-    ldy #(SCREEN_COLS-1)
-@init_char:
-    sta (ZP_SCREEN_PTR), Y         ; Store space at the current position
-    dey
-    bpl @init_char          ; Loop until column is less than 0
-
-    ; Add SCREEN_COLS to the pointer to move to the next line
+    ; Advance pointer to next line
     clc
     lda ZP_SCREEN_PTR
     adc #SCREEN_COLS
@@ -182,7 +164,7 @@ init_screen:
     sta ZP_SCREEN_PTR + 1
 
     dex
-    bpl @init_line          ; Loop until line is less than 0
+    bpl @init_line          ; Loop until all lines done
 
     ; Initialize the screen write pointers
     ldx #$0
@@ -327,9 +309,12 @@ write_hex_byte:
     
     ; Output low nibble
     pla                     ; Restore original
+    pha                     ; Save it again to restore on return
     and #$0F
     jsr nibble_to_hex
-    jmp write_char          ; Tail call
+    jsr write_char
+    pla
+    rts
 
 ; Output 16-bit address as 4 hex digits
 ; Address in ZP_DUMP_ADDR/ZP_DUMP_ADDR+1
@@ -339,6 +324,60 @@ write_hex_addr:
     jsr write_hex_byte
     lda ZP_DUMP_ADDR        ; Low byte
     jmp write_hex_byte      ; Tail call
+
+; Write byte in A as decimal (0-255)
+; Uses: A, X, Y
+write_decimal_byte:
+    ldx #0              ; Hundreds counter
+    ldy #0              ; Tens counter
+    
+    ; Count hundreds
+@hundreds:
+    cmp #100
+    bcc @tens_start
+    sbc #100            ; A = A - 100
+    inx                 ; Increment hundreds
+    jmp @hundreds
+    
+@tens_start:
+    ; Count tens
+@tens:
+    cmp #10
+    bcc @output
+    sbc #10             ; A = A - 10  
+    iny                 ; Increment tens
+    jmp @tens
+    
+@output:
+    pha                 ; Save units digit
+    
+    ; Output hundreds (if non-zero)
+    cpx #0
+    beq @check_tens
+    txa
+    clc
+    adc #'0'
+    jsr write_char
+    
+@check_tens:
+    ; Output tens (if hundreds printed or tens non-zero)
+    cpx #0              ; Were hundreds printed?
+    bne @print_tens     ; Yes, always print tens
+    cpy #0              ; No hundreds, check if tens non-zero
+    beq @print_units    ; Skip tens if zero
+    
+@print_tens:
+    tya
+    clc
+    adc #'0'
+    jsr write_char
+    
+@print_units:
+    pla                 ; Restore units
+    clc
+    adc #'0'
+    jsr write_char
+    rts
 
 ; Main memory dump routine
 ; Outputs: $ADDR bytes...
@@ -387,6 +426,11 @@ newline:
     rts
 
 dump_address_list:
+    jsr newline
+    WriteString RomString
+    WriteChar ' '
+    WriteString DumpString
+
     ; Initialize list pointer and get count
     lda #<memory_address_list
     sta ZP_LIST_PTR
@@ -439,16 +483,25 @@ dump_address_list:
 ; Output: Carry clear = pass, Carry set = fail
 ; Uses: A, X, Y, ZP_PTR, ZP_TEMP_RAM_TEST
 test_ram_page:
+    ; Output which page is being tested, then reset write position to overwrite
+    ; it
+    cmp #$01
+    beq @start              ; Don't output for stack page (no stack - can't jsr)
+    jsr write_hex_byte
+    dec ZP_COL
+    dec ZP_COL
+
+@start:
     ; Set up page address
     sta ZP_PTR + 1
     lda #0
     sta ZP_PTR
     
     ; Test 1: Walking 1s pattern
-    ldx #8              ; 8 bit positions
+    ldx #8                  ; 8 bit positions
     lda #1
 @walk1_loop:
-    sta ZP_TEMP_RAM_TEST         ; Current test pattern
+    sta ZP_TEMP_RAM_TEST    ; Current test pattern
     ldy #0
 @write1_loop:
     lda ZP_TEMP_RAM_TEST
@@ -546,6 +599,161 @@ test_ram_page:
     sta $8004
     sta $8005
     jmp final_loop
+
+; Test all RAM and detect size
+; Output: Carry clear = success, Carry set = failure
+; Sets: ZP_RAM_SIZE ($08/$10/$20 for working KB, $00 if 8K fails)
+;       ZP_FAILED_PAGE (first failed page, $00 if all passed)
+test_all_ram:
+    ; Initialize
+    lda #$00
+    sta ZP_RAM_SIZE
+    sta ZP_FAILED_PAGE
+    
+    ; Test 8K base RAM (pages $02-$1F)
+    lda #$02
+@test_8k:
+    jsr test_ram_page
+    bcs @failed
+    clc
+    adc #1
+    cmp #$20
+    bne @test_8k
+    
+    ; 8K passed
+    lda #$08
+    sta ZP_RAM_SIZE
+    
+    ; Test 16K extension (pages $20-$3F)
+    lda #$20
+@test_16k:
+    jsr test_ram_page
+    bcs @failed
+    clc
+    adc #1
+    cmp #$40
+    bne @test_16k
+    
+    ; 16K passed
+    lda #$10
+    sta ZP_RAM_SIZE
+    
+    ; Test 32K extension (pages $40-$7F)
+    lda #$40
+@test_32k:
+    jsr test_ram_page
+    bcs @failed
+    clc
+    adc #1
+    cmp #$80
+    bne @test_32k
+    
+    ; 32K passed
+    lda #$20
+    sta ZP_RAM_SIZE
+    
+    ; All tests passed
+    lda #$00
+    sta ZP_FAILED_PAGE
+    clc
+    rts
+    
+@failed:
+    ; Carry is already set if we get here
+    sta ZP_FAILED_PAGE
+    rts
+
+; Zero page test routine
+; Output: Carry clear = pass, Carry set = fail
+; Uses only A, X, Y registers - no RAM/ZP/stack storage
+test_zero_page:
+    ; Test 1: Walking 1s pattern
+    ldy #1              ; Start with bit 0 set
+@walk1_outer:
+    ; Write pattern Y to all of zero page
+    ldx #0
+@walk1_write:
+    sty $00, x
+    inx
+    bne @walk1_write
+    
+    ; Verify pattern
+    ldx #0
+@walk1_read:
+    tya                 ; Get test pattern into A
+    cmp $00, x          ; Compare A with memory
+    bne @fail
+    inx
+    bne @walk1_read
+    
+    ; Next bit position
+    tya
+    asl                 ; Shift left
+    tay
+    bcc @walk1_outer    ; Continue until bit 7 shifts out
+    
+    ; Test 2: Walking 0s pattern
+    ldy #$FE            ; Start with bit 0 clear
+@walk0_outer:
+    ; Write pattern Y to all of zero page
+    ldx #0
+@walk0_write:
+    sty $00, x
+    inx
+    bne @walk0_write
+    
+    ; Verify pattern  
+    ldx #0
+@walk0_read:
+    tya                 ; Get test pattern into A
+    cmp $00, x          ; Compare A with memory
+    bne @fail
+    inx
+    bne @walk0_read
+    
+    ; Next bit position (rotate 0 left)
+    tya
+    rol
+    tay
+    cmp #$7F            ; Stop when we've done all 8 positions
+    bne @walk0_outer
+    
+    ; Test 3: Address-in-address pattern
+    ldx #0
+@addr_write:
+    txa                 ; Transfer X to A
+    sta $00, x          ; Store A at address X
+    inx
+    bne @addr_write
+    
+    ldx #0
+@addr_read:
+    txa                 ; Get X into A
+    cmp $00, x          ; Compare A with memory at X
+    bne @fail
+    inx
+    bne @addr_read
+    
+    ; All tests passed
+    clc
+    jmp test_stack
+    
+@fail:
+    sec
+    lda #'Z'
+    sta $8000
+    lda #'P'
+    sta $8001
+    lda #' '
+    sta $8002
+    sta $8006
+    lda #'E'
+    sta $8003
+    lda #'R'
+    sta $8004
+    sta $8005
+    jmp final_loop
+
 
 nmi_handler:
     ; Handle NMI (not implemented)
