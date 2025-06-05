@@ -38,7 +38,7 @@ ZP_LIST_PTR = $0A
 ; Temporary storage for dump routine
 ZP_TEMP_DUMP_LIST = $0C
 
-; Temporary storage for dump routine
+; Temporary storage for dump/checksum routines
 ZP_TEMP_DUMP_MEM = $0D
 
 ; Generic purpose pointer
@@ -52,3 +52,6 @@ ZP_RAM_SIZE = $11
 
 ; If the RAM test fails, this will be set to the address of the failed page
 ZP_FAILED_PAGE = $12
+
+; Checksum used by output_checksum
+ZP_CHECKSUM = $13

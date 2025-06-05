@@ -407,6 +407,49 @@ dump_memory:
     
     rts
 
+; Calculate and output checksum of 4K ROM ($1000 bytes)
+; Uses: ZP_DUMP_ADDR (start address)
+; Outputs: CS:XX
+output_checksum:
+    ; Output "CS: $"
+    WriteChar ' '
+    WriteChar 'C'
+    WriteChar 'S'
+    WriteChar ':'
+    
+    ; Initialize checksum
+    lda #0
+    sta ZP_CHECKSUM
+    
+    ; Calculate checksum of $1000 bytes
+    ldx #$10               ; 16 pages of 256 bytes = $1000 bytes
+    ldy #0
+@page_loop:
+    lda (ZP_DUMP_ADDR), y
+    clc
+    adc ZP_CHECKSUM
+    sta ZP_CHECKSUM        ; Let it wrap on overflow
+    
+    iny
+    bne @page_loop         ; Y wraps to 0 after 256 bytes
+    
+    ; Move to next page
+    inc ZP_DUMP_ADDR+1
+    dex
+    bne @page_loop
+    
+    ; Restore high byte of address
+    lda ZP_DUMP_ADDR+1
+    sec
+    sbc #$10
+    sta ZP_DUMP_ADDR+1
+    
+    ; Output checksum
+    lda ZP_CHECKSUM
+    jsr write_hex_byte
+    
+    rts
+
 ; Move to beginning of next line
 ; Wraps to line 0 if at bottom of screen
 ; Uses: A
@@ -463,6 +506,7 @@ dump_address_list:
 
     jsr newline
     jsr dump_memory
+    jsr output_checksum
     
     ; Advance to next address in list
     clc
