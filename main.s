@@ -38,6 +38,16 @@ after_stack_test:
     jsr init_screen
 
     WriteString ProgString
+    WriteChar ' '
+    WriteChar 'V'
+    lda #MAJOR_VERSION
+    jsr write_decimal_byte
+    WriteChar '.'
+    lda #MINOR_VERSION
+    jsr write_decimal_byte
+    WriteChar '.'
+    lda #PATCH_VERSION
+    jsr write_decimal_byte
     WriteString DashString
     WriteString AuthorString
     jsr newline

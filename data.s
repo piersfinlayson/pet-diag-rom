@@ -17,7 +17,7 @@
 
 CbmString AuthorString, "PIERS.ROCKS"
 CbmString DashString, " - "
-CbmString ProgString, "PET DIAGNOSTICS ROM"
+CbmString ProgString, "PET DIAG ROM"
 CbmString ZeroString, "ZERO"
 CbmString StackString, "STACK"
 CbmString PageString, "PAGE"
